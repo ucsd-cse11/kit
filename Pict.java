@@ -33,6 +33,9 @@ interface Pict {
 
     /** Render this Pict into a Raster of pixels. */
     default Raster render() {
+        // an image with no area has no pixels to draw (and AWT refuses to
+        // make one)
+        if (width() == 0 || height() == 0) return new Raster(width(), height());
         var img = new BufferedImage(width(), height(), BufferedImage.TYPE_INT_ARGB);
         var g = img.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -81,6 +84,11 @@ final class Px {
             throw new IllegalArgumentException("measurement must be a number, got " + v);
         }
         return (int) Math.round(v);
+    }
+    /** A width, height, or radius: zero is fine (an empty picture), negative is not. */
+    static int size(String what, int v) {
+        if (v < 0) throw new IllegalArgumentException(what + " is negative: " + v);
+        return v;
     }
 }
 
@@ -132,6 +140,7 @@ final class Colors {
 // --- Primitive shapes ---
 
 record Circle(int radius, Color color) implements Pict {
+    Circle { Px.size("radius", radius); }
     Circle(int radius, String color) { this(radius, Colors.named(color)); }
     Circle(double radius, String color) { this(Px.of(radius), Colors.named(color)); }
     public String toString() { return "Circle[radius=" + radius + ", color=" + Colors.nameOf(color) + "]"; }
@@ -144,6 +153,7 @@ record Circle(int radius, Color color) implements Pict {
 }
 
 record CircleOutline(int radius, Color color) implements Pict {
+    CircleOutline { Px.size("radius", radius); }
     CircleOutline(int radius, String color) { this(radius, Colors.named(color)); }
     CircleOutline(double radius, String color) { this(Px.of(radius), Colors.named(color)); }
     public String toString() { return "CircleOutline[radius=" + radius + ", color=" + Colors.nameOf(color) + "]"; }
@@ -156,6 +166,7 @@ record CircleOutline(int radius, Color color) implements Pict {
 }
 
 record Rect(int width, int height, Color color) implements Pict {
+    Rect { Px.size("width", width); Px.size("height", height); }
     Rect(int width, int height, String color) { this(width, height, Colors.named(color)); }
     Rect(double width, double height, String color) { this(Px.of(width), Px.of(height), Colors.named(color)); }
     public String toString() { return "Rect[width=" + width + ", height=" + height + ", color=" + Colors.nameOf(color) + "]"; }
@@ -166,6 +177,7 @@ record Rect(int width, int height, Color color) implements Pict {
 }
 
 record RectOutline(int width, int height, Color color) implements Pict {
+    RectOutline { Px.size("width", width); Px.size("height", height); }
     RectOutline(int width, int height, String color) { this(width, height, Colors.named(color)); }
     RectOutline(double width, double height, String color) { this(Px.of(width), Px.of(height), Colors.named(color)); }
     public String toString() { return "RectOutline[width=" + width + ", height=" + height + ", color=" + Colors.nameOf(color) + "]"; }
@@ -177,6 +189,7 @@ record RectOutline(int width, int height, Color color) implements Pict {
 
 /** An isosceles triangle: base along the bottom, apex at the top center. */
 record Triangle(int width, int height, Color color) implements Pict {
+    Triangle { Px.size("width", width); Px.size("height", height); }
     Triangle(int width, int height, String color) { this(width, height, Colors.named(color)); }
     Triangle(double width, double height, String color) { this(Px.of(width), Px.of(height), Colors.named(color)); }
     public String toString() { return "Triangle[width=" + width + ", height=" + height + ", color=" + Colors.nameOf(color) + "]"; }
@@ -188,6 +201,7 @@ record Triangle(int width, int height, Color color) implements Pict {
 }
 
 record TriangleOutline(int width, int height, Color color) implements Pict {
+    TriangleOutline { Px.size("width", width); Px.size("height", height); }
     TriangleOutline(int width, int height, String color) { this(width, height, Colors.named(color)); }
     TriangleOutline(double width, double height, String color) { this(Px.of(width), Px.of(height), Colors.named(color)); }
     public String toString() { return "TriangleOutline[width=" + width + ", height=" + height + ", color=" + Colors.nameOf(color) + "]"; }
@@ -392,8 +406,12 @@ record FromRaster(Raster raster) implements Pict {
 
 class Raster {
     private final Color[][] pixels;
+    // kept apart from pixels: a 5x0 raster has no rows to measure a width from
+    private final int width, height;
 
     Raster(int width, int height) {
+        this.width = Px.size("width", width);
+        this.height = Px.size("height", height);
         this.pixels = new Color[height][width];
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
@@ -402,7 +420,9 @@ class Raster {
         }
     }
 
-    private Raster(Color[][] pixels) {
+    private Raster(int width, int height, Color[][] pixels) {
+        this.width = width;
+        this.height = height;
         this.pixels = pixels;
     }
 
@@ -413,11 +433,11 @@ class Raster {
                 pixels[y][x] = new Color(img.getRGB(x, y), true);
             }
         }
-        return new Raster(pixels);
+        return new Raster(img.getWidth(), img.getHeight(), pixels);
     }
 
-    int width() { return this.pixels[0].length; }
-    int height() { return this.pixels.length; }
+    int width() { return this.width; }
+    int height() { return this.height; }
 
     Color colorAt(int x, int y) { return this.pixels[y][x]; }
     void setColorAt(int x, int y, Color color) { this.pixels[y][x] = color; }
@@ -466,6 +486,10 @@ class ImageIO_ {
     }
 
     static void save(Raster r, String filename) {
+        if (r.width() == 0 || r.height() == 0) {
+            throw new IllegalArgumentException("can't save an empty (" + r.width() + "x" + r.height()
+                + ") image: a PNG needs at least one pixel");
+        }
         try {
             ImageIO.write(toBufferedImage(r), "png", resolve(filename));
         } catch (IOException e) {
@@ -493,6 +517,10 @@ class ImageIO_ {
         for (Pict p : frames) {
             w = Math.max(w, p.width());
             h = Math.max(h, p.height());
+        }
+        if (w == 0 || h == 0) {
+            throw new IllegalArgumentException("can't save frames that are all empty (" + w + "x" + h
+                + "): a GIF needs at least one pixel");
         }
         ImageWriter writer = ImageIO.getImageWritersByFormatName("gif").next();
         try (var out = ImageIO.createImageOutputStream(new FileOutputStream(resolve(filename)))) {
@@ -543,6 +571,21 @@ class ImageIO_ {
         return meta;
     }
 
+    // What show() puts up for an image with no area, which has nothing of its
+    // own to show: a small gray dotted circle.
+    private static Raster shownForm(Raster r) {
+        if (r.width() > 0 && r.height() > 0) return r;
+        var img = new BufferedImage(20, 20, BufferedImage.TYPE_INT_ARGB);
+        var g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setColor(Color.GRAY);
+        g.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND,
+            1, new float[] { 0.1f, 3.5f }, 0));
+        g.drawOval(2, 2, 15, 15);
+        g.dispose();
+        return Raster.fromBufferedImage(img);
+    }
+
     private static BufferedImage toBufferedImage(Raster r) {
         var img = new BufferedImage(r.width(), r.height(), BufferedImage.TYPE_INT_ARGB);
         for (int y = 0; y < r.height(); y++) {
@@ -558,13 +601,14 @@ class ImageIO_ {
     }
 
     static void show(Raster r) {
+        Raster visible = shownForm(r);
         if (GraphicsEnvironment.isHeadless()) {
             String filename = SHOWN_PREFIX + (shown++) + ".png";
-            save(r, filename);
+            save(visible, filename);
             System.out.println("[no display: wrote " + filename + "]");
             return;
         }
-        var img = toBufferedImage(r);
+        var img = toBufferedImage(visible);
         var frame = new javax.swing.JFrame("Pict");
         frame.setDefaultCloseOperation(javax.swing.JFrame.DISPOSE_ON_CLOSE);
         frame.add(new javax.swing.JPanel() {
@@ -573,7 +617,7 @@ class ImageIO_ {
                 g.drawImage(img, 0, 0, null);
             }
             @Override public Dimension getPreferredSize() {
-                return new Dimension(r.width(), r.height());
+                return new Dimension(visible.width(), visible.height());
             }
         });
         frame.pack();
