@@ -420,6 +420,37 @@ class Raster {
         }
     }
 
+    Raster(Color[][] pixels) {
+        this(checkedWidth(pixels), pixels.length, copyOf(pixels));
+    }
+
+    private static int checkedWidth(Color[][] pixels) {
+        if (pixels == null) throw new IllegalArgumentException("pixels is null");
+        if (pixels.length == 0) throw new IllegalArgumentException("pixels has no rows");
+        if (pixels[0] == null) throw new IllegalArgumentException("pixels[0] is null");
+        int width = pixels[0].length;
+        if (width == 0) throw new IllegalArgumentException("pixels[0] is empty");
+        for (int y = 0; y < pixels.length; y++) {
+            if (pixels[y] == null) throw new IllegalArgumentException("pixels[" + y + "] is null");
+            if (pixels[y].length != width) {
+                throw new IllegalArgumentException("pixels[" + y + "] has length " + pixels[y].length
+                    + ", but pixels[0] has length " + width + "; every row needs the same length");
+            }
+            for (int x = 0; x < width; x++) {
+                if (pixels[y][x] == null) {
+                    throw new IllegalArgumentException("pixels[" + y + "][" + x + "] is null");
+                }
+            }
+        }
+        return width;
+    }
+
+    private static Color[][] copyOf(Color[][] pixels) {
+        Color[][] copy = new Color[pixels.length][];
+        for (int y = 0; y < pixels.length; y++) copy[y] = pixels[y].clone();
+        return copy;
+    }
+
     private Raster(int width, int height, Color[][] pixels) {
         this.width = width;
         this.height = height;
@@ -475,7 +506,7 @@ class ImageIO_ {
 
     static Raster load(String filename) {
         try {
-            return Raster.fromBufferedImage(ImageIO.read(resolve(filename)));
+            return Raster.fromBufferedImage(ImageIO.read(findImage(filename)));
         } catch (IOException e) {
             throw new RuntimeException("Failed to load image: " + e.getMessage());
         }
@@ -491,7 +522,9 @@ class ImageIO_ {
                 + ") image: a PNG needs at least one pixel");
         }
         try {
-            ImageIO.write(toBufferedImage(r), "png", resolve(filename));
+            File out = resolve(filename);
+            if (out.getParentFile() != null) out.getParentFile().mkdirs();
+            ImageIO.write(toBufferedImage(r), "png", out);
         } catch (IOException e) {
             throw new RuntimeException("Failed to save image: " + e.getMessage());
         }
@@ -630,5 +663,11 @@ class ImageIO_ {
     // Relative filenames are relative to where java was started.
     private static File resolve(String filename) {
         return new File(filename);
+    }
+
+    // The book's images live with the book, so on the desktop a load is
+    // just a file next to where java was started.
+    private static File findImage(String filename) {
+        return resolve(filename);
     }
 }
